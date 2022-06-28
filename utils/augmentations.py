@@ -88,7 +88,15 @@ def replicate(im, labels):
     return im, labels
 
 
-def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleFill=False, scaleup=True, stride=32):
+def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleFill=False, scaleup=True, stride=32, zstack_support_npy=False):
+    # check if incoming image is a zstacked image
+    if zstack_support_npy:
+        z = im.shape[-1] # last is the channel
+        half_z = np.int(z/2) # ex.: z=27, half_z=13 # would be a 9-zstacked image
+        half_z_base = half_z % 3 # ex: 1
+        half_z = half_z - half_z_base # half_z: 12
+        im = im[...,half_z:half_z+3]
+    
     # Resize and pad image while meeting stride-multiple constraints
     shape = im.shape[:2]  # current shape [height, width]
     if isinstance(new_shape, int):

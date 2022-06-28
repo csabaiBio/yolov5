@@ -75,6 +75,12 @@ class Annotator:
             self.draw = ImageDraw.Draw(self.im)
             self.font = check_pil_font(font='Arial.Unicode.ttf' if is_chinese(example) else font,
                                        size=font_size or max(round(sum(self.im.size) / 2 * 0.035), 12))
+        elif isinstance(im, np.ndarray ):  # zstacked numpy array
+            half_z = np.int(im.shape[2]/2) # ex.: z=27, half_z=13 # would be a 9-zstacked image
+            half_z_base = half_z % 3 # ex: 1
+            half_z = half_z - half_z_base # half_z: 12
+            self.im = im[...,half_z:half_z+3]
+        
         else:  # use cv2
             self.im = im
         self.lw = line_width or max(round(sum(im.shape) / 2 * 0.003), 2)  # line width
@@ -177,7 +183,7 @@ def output_to_target(output):
     return np.array(targets)
 
 
-def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max_size=1920, max_subplots=16):
+def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max_size=1920, max_subplots=16, zstack_support_npy=False):
     # Plot image grid with labels
     if isinstance(images, torch.Tensor):
         images = images.cpu().float().numpy()
@@ -196,7 +202,14 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max
             break
         x, y = int(w * (i // ns)), int(h * (i % ns))  # block origin
         im = im.transpose(1, 2, 0)
-        mosaic[y:y + h, x:x + w, :] = im
+
+        if zstack_support_npy:# if zstacked image, then select a single layer from the middle
+            half_z = np.int(im.shape[2]/2) # ex.: z=27, half_z=13 # would be a 9-zstacked image
+            half_z_base = half_z % 3 # ex: 1
+            half_z = half_z - half_z_base # half_z: 12
+            mosaic[y:y + h, x:x + w, :] = im[...,half_z:half_z+3]
+        else:
+            mosaic[y:y + h, x:x + w, :] = im
 
     # Resize (optional)
     scale = max_size / ns / max(h, w)

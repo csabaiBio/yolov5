@@ -33,7 +33,7 @@ from utils.torch_utils import torch_distributed_zero_first
 
 # Parameters
 HELP_URL = 'https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
-IMG_FORMATS = ['bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp']  # include image suffixes
+IMG_FORMATS = ['bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp', 'npy']  # include image suffixes
 VID_FORMATS = ['asf', 'avi', 'gif', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'wmv']  # include video suffixes
 
 # Get orientation exif tag
@@ -92,7 +92,7 @@ def exif_transpose(image):
 
 
 def create_dataloader(path, imgsz, batch_size, stride, single_cls=False, hyp=None, augment=False, cache=False, pad=0.0,
-                      rect=False, rank=-1, workers=8, image_weights=False, quad=False, prefix='', shuffle=False):
+                      rect=False, rank=-1, workers=8, image_weights=False, quad=False, prefix='', shuffle=False, zstack_support_npy=False):
     if rect and shuffle:
         LOGGER.warning('WARNING: --rect is incompatible with DataLoader shuffle, setting shuffle=False')
         shuffle = False
@@ -106,7 +106,8 @@ def create_dataloader(path, imgsz, batch_size, stride, single_cls=False, hyp=Non
                                       stride=int(stride),
                                       pad=pad,
                                       image_weights=image_weights,
-                                      prefix=prefix)
+                                      prefix=prefix, 
+                                      zstack_support_npy=False)
 
     batch_size = min(batch_size, len(dataset))
     nd = torch.cuda.device_count()  # number of CUDA devices
@@ -158,7 +159,7 @@ class _RepeatSampler:
 
 class LoadImages:
     # YOLOv5 image/video dataloader, i.e. `python detect.py --source image.jpg/vid.mp4`
-    def __init__(self, path, img_size=640, stride=32, auto=True):
+    def __init__(self, path, img_size=640, stride=32, auto=True, zstack_support_npy=False):
         p = str(Path(path).resolve())  # os-agnostic absolute path
         if '*' in p:
             files = sorted(glob.glob(p, recursive=True))  # glob
@@ -180,6 +181,8 @@ class LoadImages:
         self.video_flag = [False] * ni + [True] * nv
         self.mode = 'image'
         self.auto = auto
+        self.zstack_support_npy = zstack_support_npy
+
         if any(videos):
             self.new_video(videos[0])  # new video
         else:
@@ -217,11 +220,15 @@ class LoadImages:
             # Read image
             self.count += 1
             img0 = cv2.imread(path)  # BGR
+            if self.zstack_support_npy:
+                img0 = np.load(path) # load with numpy
+            else:
+                img0 = cv2.imread(path)  # BGR
             assert img0 is not None, f'Image Not Found {path}'
             s = f'image {self.count}/{self.nf} {path}: '
 
         # Padded resize
-        img = letterbox(img0, self.img_size, stride=self.stride, auto=self.auto)[0]
+        img = letterbox(img0, self.img_size, stride=self.stride, auto=self.auto, zstack_support_npy=self.zstack_support_npy)[0]
 
         # Convert
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
@@ -380,7 +387,7 @@ class LoadImagesAndLabels(Dataset):
     cache_version = 0.6  # dataset labels *.cache version
 
     def __init__(self, path, img_size=640, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
-                 cache_images=False, single_cls=False, stride=32, pad=0.0, prefix=''):
+                 cache_images=False, single_cls=False, stride=32, pad=0.0, prefix='', zstack_support_npy=False):
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
@@ -391,6 +398,7 @@ class LoadImagesAndLabels(Dataset):
         self.stride = stride
         self.path = path
         self.albumentations = Albumentations() if augment else None
+        self.zstack_support_npy = zstack_support_npy
 
         try:
             f = []  # image files
@@ -571,7 +579,7 @@ class LoadImagesAndLabels(Dataset):
 
             # Letterbox
             shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
-            img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
+            img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment, zstack_support_npy=self.zstack_support_npy)
             shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
 
             labels = self.labels[index].copy()
@@ -596,7 +604,10 @@ class LoadImagesAndLabels(Dataset):
             nl = len(labels)  # update after albumentations
 
             # HSV color-space
-            augment_hsv(img, hgain=hyp['hsv_h'], sgain=hyp['hsv_s'], vgain=hyp['hsv_v'])
+            if self.zstack_support_npy:
+                pass # skipping hsv augmentation for zstacked dataset
+            else:
+                augment_hsv(img, hgain=hyp['hsv_h'], sgain=hyp['hsv_s'], vgain=hyp['hsv_v'])
 
             # Flip up-down
             if random.random() < hyp['flipud']:
@@ -633,7 +644,10 @@ class LoadImagesAndLabels(Dataset):
                 im = np.load(npy)
             else:  # read image
                 f = self.img_files[i]
-                im = cv2.imread(f)  # BGR
+                if self.zstack_support_npy:
+                    im = np.load(f) ### THIS SHOULD BE THE WHOLE IMG WITH ALL CH, numpy npy format
+                else:
+                    im = cv2.imread(f)  # BGR
                 assert im is not None, f'Image Not Found {f}'
             h0, w0 = im.shape[:2]  # orig hw
             r = self.img_size / max(h0, w0)  # ratio
@@ -825,7 +839,7 @@ def flatten_recursive(path=DATASETS_DIR / 'coco128'):
         shutil.copyfile(file, new_path / Path(file).name)
 
 
-def extract_boxes(path=DATASETS_DIR / 'coco128'):  # from utils.datasets import *; extract_boxes()
+def extract_boxes(zstack_support_npy, path=DATASETS_DIR / 'coco128'):  # from utils.datasets import *; extract_boxes()
     # Convert detection dataset into classification dataset, with one directory per class
     path = Path(path)  # images dir
     shutil.rmtree(path / 'classifier') if (path / 'classifier').is_dir() else None  # remove existing
@@ -834,7 +848,11 @@ def extract_boxes(path=DATASETS_DIR / 'coco128'):  # from utils.datasets import 
     for im_file in tqdm(files, total=n):
         if im_file.suffix[1:] in IMG_FORMATS:
             # image
-            im = cv2.imread(str(im_file))[..., ::-1]  # BGR to RGB
+            if zstack_support_npy:
+                im = np.load(str(im_file)) # numpy load npy
+                z = im.shape[2]
+            else:
+                im = cv2.imread(str(im_file))[..., ::-1]  # BGR to RGB
             h, w = im.shape[:2]
 
             # labels
@@ -883,23 +901,30 @@ def autosplit(path=DATASETS_DIR / 'coco128/images', weights=(0.9, 0.1, 0.0), ann
                 f.write('./' + img.relative_to(path.parent).as_posix() + '\n')  # add image to txt file
 
 
-def verify_image_label(args):
+def verify_image_label(args, zstack_support_npy=False):
     # Verify one image-label pair
     im_file, lb_file, prefix = args
     nm, nf, ne, nc, msg, segments = 0, 0, 0, 0, '', []  # number (missing, found, empty, corrupt), message, segments
     try:
-        # verify images
-        im = Image.open(im_file)
-        im.verify()  # PIL verify
-        shape = exif_size(im)  # image size
-        assert (shape[0] > 9) & (shape[1] > 9), f'image size {shape} <10 pixels'
-        assert im.format.lower() in IMG_FORMATS, f'invalid image format {im.format}'
-        if im.format.lower() in ('jpg', 'jpeg'):
-            with open(im_file, 'rb') as f:
-                f.seek(-2, 2)
-                if f.read() != b'\xff\xd9':  # corrupt JPEG
-                    ImageOps.exif_transpose(Image.open(im_file)).save(im_file, 'JPEG', subsampling=0, quality=100)
-                    msg = f'{prefix}WARNING: {im_file}: corrupt JPEG restored and saved'
+        if zstack_support_npy:
+            # if else added by abiricz on 20.06.2022.
+            im = np.load(im_file)
+            shape = im.shape  # image size
+            assert (shape[0] > 9) & (shape[1] > 9), f'image size {shape} <10 pixels'
+
+        else:
+            # verify images
+            im = Image.open(im_file)
+            im.verify()  # PIL verify
+            shape = exif_size(im)  # image size
+            assert (shape[0] > 9) & (shape[1] > 9), f'image size {shape} <10 pixels'
+            assert im.format.lower() in IMG_FORMATS, f'invalid image format {im.format}'
+            if im.format.lower() in ('jpg', 'jpeg'):
+                with open(im_file, 'rb') as f:
+                    f.seek(-2, 2)
+                    if f.read() != b'\xff\xd9':  # corrupt JPEG
+                        ImageOps.exif_transpose(Image.open(im_file)).save(im_file, 'JPEG', subsampling=0, quality=100)
+                        msg = f'{prefix}WARNING: {im_file}: corrupt JPEG restored and saved'
 
         # verify labels
         if os.path.isfile(lb_file):
@@ -935,7 +960,7 @@ def verify_image_label(args):
         return [None, None, None, None, nm, nf, ne, nc, msg]
 
 
-def dataset_stats(path='coco128.yaml', autodownload=False, verbose=False, profile=False, hub=False):
+def dataset_stats(path='coco128.yaml', autodownload=False, verbose=False, profile=False, hub=False, zstack_support_npy=False):
     """ Return dataset statistics dictionary with images and instances counts per split per class
     To run in parent directory: export PYTHONPATH="$PWD/yolov5"
     Usage1: from utils.datasets import *; dataset_stats('coco128.yaml', autodownload=True)
@@ -960,11 +985,19 @@ def dataset_stats(path='coco128.yaml', autodownload=False, verbose=False, profil
         else:  # path is data.yaml
             return False, None, path
 
-    def hub_ops(f, max_dim=1920):
+    def hub_ops(f, zstack_support_npy, max_dim=1920):
         # HUB ops for 1 image 'f': resize and save at reduced quality in /dataset-hub for web/app viewing
         f_new = im_dir / Path(f).name  # dataset-hub image filename
         try:  # use PIL
-            im = Image.open(f)
+            if zstack_support_npy:
+                im_npy = np.load(f)
+                half_z = np.int(im_npy.shape[2]/2) # ex.: z=27, half_z=13 # would be a 9-zstacked image
+                half_z_base = half_z % 3 # ex: 1
+                half_z = half_z - half_z_base # half_z: 12
+                im = Image.fromarray(im_npy[...,half_z:half_z+3]) # select middle stack as a single layer
+            else:
+                im = Image.open(f)
+            
             r = max_dim / max(im.height, im.width)  # ratio
             if r < 1.0:  # image too large
                 im = im.resize((int(im.width * r), int(im.height * r)))
@@ -991,7 +1024,7 @@ def dataset_stats(path='coco128.yaml', autodownload=False, verbose=False, profil
             stats[split] = None  # i.e. no test set
             continue
         x = []
-        dataset = LoadImagesAndLabels(data[split])  # load dataset
+        dataset = LoadImagesAndLabels(data[split], zstack_support_npy=zstack_support_npy)  # load dataset
         for label in tqdm(dataset.labels, total=dataset.n, desc='Statistics'):
             x.append(np.bincount(label[:, 0].astype(int), minlength=data['nc']))
         x = np.array(x)  # shape(128x80)
