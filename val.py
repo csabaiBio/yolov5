@@ -168,7 +168,7 @@ def run(data,
         rect = False if task == 'benchmark' else pt  # square inference for benchmarks
         task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
         dataloader = create_dataloader(data[task], imgsz, batch_size, stride, single_cls, pad=pad, rect=rect,
-                                       workers=workers, prefix=colorstr(f'{task}: '), zstack_support_npy)[0]
+                                       workers=workers, prefix=colorstr(f'{task}: '), zstack_support_npy=zstack_support_npy)[0]
 
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=nc)
@@ -246,9 +246,9 @@ def run(data,
         # Plot images
         if plots and batch_i < 3:
             f = save_dir / f'val_batch{batch_i}_labels.jpg'  # labels
-            Thread(target=plot_images, args=(im, targets, paths, f, names, zstack_support_npy=zstack_support_npy), daemon=True).start()
+            Thread(target=plot_images, args=(im, targets, paths, f, names), daemon=True).start()
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
-            Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names, zstack_support_npy=zstack_support_npy), daemon=True).start()
+            Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names), daemon=True).start()
 
     # Compute metrics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy

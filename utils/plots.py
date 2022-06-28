@@ -183,7 +183,7 @@ def output_to_target(output):
     return np.array(targets)
 
 
-def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max_size=1920, max_subplots=16, zstack_support_npy=False):
+def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max_size=1920, max_subplots=16):
     # Plot image grid with labels
     if isinstance(images, torch.Tensor):
         images = images.cpu().float().numpy()
@@ -203,7 +203,7 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max
         x, y = int(w * (i // ns)), int(h * (i % ns))  # block origin
         im = im.transpose(1, 2, 0)
 
-        if zstack_support_npy:# if zstacked image, then select a single layer from the middle
+        if im.shape[-1] > 3: # if zstacked image, then select a single layer from the middle
             half_z = np.int(im.shape[2]/2) # ex.: z=27, half_z=13 # would be a 9-zstacked image
             half_z_base = half_z % 3 # ex: 1
             half_z = half_z - half_z_base # half_z: 12
