@@ -253,7 +253,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                        rank=-1,
                                        workers=workers * 2,
                                        pad=0.5,
-                                       prefix=colorstr('val: '))[0]
+                                       prefix=colorstr('val: '),
+                                       zstack_support_npy=opt.zstack_support_npy)[0],
+                                       
 
         if not resume:
             labels = np.concatenate(dataset.labels, 0)
@@ -377,7 +379,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
                 pbar.set_description(('%10s' * 2 + '%10.4g' * 5) %
                                      (f'{epoch}/{epochs - 1}', mem, *mloss, targets.shape[0], imgs.shape[-1]))
-                callbacks.run('on_train_batch_end', ni, model, imgs, targets, paths, plots)
+                callbacks.run('on_train_batch_end', ni, model, imgs, targets, paths, plots, opt.zstack_support_npy)
                 if callbacks.stop_training:
                     return
             # end batch ------------------------------------------------------------------------------------------------
@@ -401,7 +403,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                            save_dir=save_dir,
                                            plots=False,
                                            callbacks=callbacks,
-                                           compute_loss=compute_loss)
+                                           compute_loss=compute_loss,
+                                           zstack_support_npy=opt.zstack_support_npy)
 
             # Update best mAP
             fi = fitness(np.array(results).reshape(1, -1))  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
@@ -520,7 +523,7 @@ def parse_opt(known=False):
     parser.add_argument('--artifact_alias', type=str, default='latest', help='W&B: Version of dataset artifact to use')
 
     # add zstack support 
-    parser.add_argument('--zstack_support_npy', type=int, default=0, help='zstack support with npy format')
+    parser.add_argument('--zstack_support_npy', action='store_true', help='zstack support with npy format')
 
 
     opt = parser.parse_known_args()[0] if known else parser.parse_args()

@@ -122,6 +122,7 @@ def run(
         plots=True,
         callbacks=Callbacks(),
         compute_loss=None,
+        zstack_support_npy=False
 ):
     # Initialize/load model and set device
     training = model is not None
@@ -170,6 +171,7 @@ def run(
         pad = 0.0 if task in ('speed', 'benchmark') else 0.5
         rect = False if task == 'benchmark' else pt  # square inference for benchmarks
         task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
+        print('\n\nSTACK SUP\n\n', zstack_support_npy)
         dataloader = create_dataloader(data[task],
                                        imgsz,
                                        batch_size,
@@ -178,7 +180,9 @@ def run(
                                        pad=pad,
                                        rect=rect,
                                        workers=workers,
-                                       prefix=colorstr(f'{task}: '))[0]
+                                       prefix=colorstr(f'{task}: '),
+                                       zstack_support_npy=zstack_support_npy)[0]
+        print('LEN:', len(dataloader))
 
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=nc)
@@ -190,7 +194,9 @@ def run(
     jdict, stats, ap, ap_class = [], [], [], []
     callbacks.run('on_val_start')
     pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
+    print('\n\n\n\npbar', pbar, enumerate(pbar), '\n\n\n\n' )
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+        print('in cycle:', im, targets, paths, shapes)
         callbacks.run('on_val_batch_start')
         t1 = time_sync()
         if cuda:
@@ -255,8 +261,8 @@ def run(
 
         # Plot images
         if plots and batch_i < 3:
-            plot_images(im, targets, paths, save_dir / f'val_batch{batch_i}_labels.jpg', names)  # labels
-            plot_images(im, output_to_target(out), paths, save_dir / f'val_batch{batch_i}_pred.jpg', names)  # pred
+            plot_images(im, targets, paths, save_dir / f'val_batch{batch_i}_labels.jpg', names, zstack_support_npy=zstack_support_npy)  # labels
+            plot_images(im, output_to_target(out), paths, save_dir / f'val_batch{batch_i}_pred.jpg', name, zstack_support_npy=zstack_support_npy)  # pred
 
         callbacks.run('on_val_batch_end')
 

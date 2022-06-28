@@ -125,7 +125,7 @@ def create_dataloader(path,
             pad=pad,
             image_weights=image_weights,
             prefix=prefix,
-            zstack_support_npy=False)
+            zstack_support_npy=zstack_support_npy)
 
     batch_size = min(batch_size, len(dataset))
     nd = torch.cuda.device_count()  # number of CUDA devices
@@ -243,7 +243,7 @@ class LoadImages:
             s = f'image {self.count}/{self.nf} {path}: '
 
         # Padded resize
-        img = letterbox(img0, self.img_size, stride=self.stride, auto=self.auto)[0]
+        img = letterbox(img0, self.img_size, stride=self.stride, auto=self.auto, zstack_support_npy=self.zstack_support_npy)[0]
 
         # Convert
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
@@ -608,7 +608,7 @@ class LoadImagesAndLabels(Dataset):
 
             # Letterbox
             shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
-            img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
+            img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment, zstack_support_npy=self.zstack_support_npy)
             shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
 
             labels = self.labels[index].copy()
@@ -635,7 +635,7 @@ class LoadImagesAndLabels(Dataset):
 
             # HSV color-space
             if self.zstack_support_npy:
-                pass
+                pass # skipping hsv augmentation for zstacked dataset
             else:
                 augment_hsv(img, hgain=hyp['hsv_h'], sgain=hyp['hsv_s'], vgain=hyp['hsv_v'])
 
@@ -876,7 +876,7 @@ def flatten_recursive(path=DATASETS_DIR / 'coco128'):
         shutil.copyfile(file, new_path / Path(file).name)
 
 
-def extract_boxes(path=DATASETS_DIR / 'coco128', zstack_support_npy=False):  # from utils.dataloaders import *; extract_boxes()
+def extract_boxes( zstack_support_npy, path=DATASETS_DIR / 'coco128'):  # from utils.dataloaders import *; extract_boxes()
     # Convert detection dataset into classification dataset, with one directory per class
     path = Path(path)  # images dir
     shutil.rmtree(path / 'classifier') if (path / 'classifier').is_dir() else None  # remove existing
