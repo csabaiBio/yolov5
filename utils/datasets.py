@@ -93,6 +93,9 @@ def exif_transpose(image):
 
 def create_dataloader(path, imgsz, batch_size, stride, single_cls=False, hyp=None, augment=False, cache=False, pad=0.0,
                       rect=False, rank=-1, workers=8, image_weights=False, quad=False, prefix='', shuffle=False, zstack_support_npy=False):
+    
+    #print('IN create dataloader:', path[0], imgsz, batch_size, stride, single_cls, hyp, augment, cache, pad,
+    #                  rect, rank, workers, image_weights, quad, prefix, shuffle, zstack_support_npy)
     if rect and shuffle:
         LOGGER.warning('WARNING: --rect is incompatible with DataLoader shuffle, setting shuffle=False')
         shuffle = False
@@ -107,7 +110,7 @@ def create_dataloader(path, imgsz, batch_size, stride, single_cls=False, hyp=Non
                                       pad=pad,
                                       image_weights=image_weights,
                                       prefix=prefix, 
-                                      zstack_support_npy=False)
+                                      zstack_support_npy=zstack_support_npy)
 
     batch_size = min(batch_size, len(dataset))
     nd = torch.cuda.device_count()  # number of CUDA devices
@@ -417,12 +420,14 @@ class LoadImagesAndLabels(Dataset):
                     raise Exception(f'{prefix}{p} does not exist')
             self.img_files = sorted(x.replace('/', os.sep) for x in f if x.split('.')[-1].lower() in IMG_FORMATS)
             # self.img_files = sorted([x for x in f if x.suffix[1:].lower() in IMG_FORMATS])  # pathlib
+####            print('\n\n\nFILES FOUND:', len(self.img_files), self.img_files[:100],'\n\n\n')
             assert self.img_files, f'{prefix}No images found'
         except Exception as e:
             raise Exception(f'{prefix}Error loading data from {path}: {e}\nSee {HELP_URL}')
 
         # Check cache
         self.label_files = img2label_paths(self.img_files)  # labels
+####        print('\n\n\nLABELS FOUND:', len(self.label_files), self.label_files[:100],'\n\n\n')
         cache_path = (p if p.is_file() else Path(self.label_files[0]).parent).with_suffix('.cache')
         try:
             cache, exists = np.load(cache_path, allow_pickle=True).item(), True  # load dict
@@ -576,6 +581,7 @@ class LoadImagesAndLabels(Dataset):
         else:
             # Load image
             img, (h0, w0), (h, w) = self.load_image(index)
+            #print('LOAD img:', img.shape)
 
             # Letterbox
             shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
@@ -792,12 +798,14 @@ class LoadImagesAndLabels(Dataset):
     @staticmethod
     def collate_fn(batch):
         img, label, path, shapes = zip(*batch)  # transposed
+####        print('img type size:', type(img), len(img), img[0].shape)
         for i, lb in enumerate(label):
             lb[:, 0] = i  # add target image index for build_targets()
         return torch.stack(img, 0), torch.cat(label, 0), path, shapes
 
     @staticmethod
     def collate_fn4(batch):
+####        print('in multi collate fn (for train)')
         img, label, path, shapes = zip(*batch)  # transposed
         n = len(shapes) // 4
         img4, label4, path4, shapes4 = [], [], path[:n], shapes[:n]
@@ -901,12 +909,12 @@ def autosplit(path=DATASETS_DIR / 'coco128/images', weights=(0.9, 0.1, 0.0), ann
                 f.write('./' + img.relative_to(path.parent).as_posix() + '\n')  # add image to txt file
 
 
-def verify_image_label(args, zstack_support_npy=False):
+def verify_image_label(args):
     # Verify one image-label pair
-    im_file, lb_file, prefix = args
+    im_file, lb_file, prefix  = args
     nm, nf, ne, nc, msg, segments = 0, 0, 0, 0, '', []  # number (missing, found, empty, corrupt), message, segments
     try:
-        if zstack_support_npy:
+        if im_file.endswith('npy'): # this would mean a zstacked numpy image
             # if else added by abiricz on 20.06.2022.
             im = np.load(im_file)
             shape = im.shape  # image size
@@ -990,11 +998,12 @@ def dataset_stats(path='coco128.yaml', autodownload=False, verbose=False, profil
         f_new = im_dir / Path(f).name  # dataset-hub image filename
         try:  # use PIL
             if zstack_support_npy:
-                im_npy = np.load(f)
-                half_z = np.int(im_npy.shape[2]/2) # ex.: z=27, half_z=13 # would be a 9-zstacked image
-                half_z_base = half_z % 3 # ex: 1
-                half_z = half_z - half_z_base # half_z: 12
-                im = Image.fromarray(im_npy[...,half_z:half_z+3]) # select middle stack as a single layer
+                im = np.load(f)
+                #im_npy = np.load(f)
+                #half_z = np.int(im_npy.shape[2]/2) # ex.: z=27, half_z=13 # would be a 9-zstacked image
+                #half_z_base = half_z % 3 # ex: 1
+                #half_z = half_z - half_z_base # half_z: 12
+                #im = Image.fromarray(im_npy[...,half_z:half_z+3]) # select middle stack as a single layer
             else:
                 im = Image.open(f)
             

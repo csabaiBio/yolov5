@@ -3,6 +3,7 @@
 Image augmentation functions
 """
 
+from hashlib import new
 import math
 import random
 
@@ -89,14 +90,6 @@ def replicate(im, labels):
 
 
 def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleFill=False, scaleup=True, stride=32, zstack_support_npy=False):
-    # check if incoming image is a zstacked image
-    if zstack_support_npy:
-        z = im.shape[-1] # last is the channel
-        half_z = np.int(z/2) # ex.: z=27, half_z=13 # would be a 9-zstacked image
-        half_z_base = half_z % 3 # ex: 1
-        half_z = half_z - half_z_base # half_z: 12
-        im = im[...,half_z:half_z+3]
-    
     # Resize and pad image while meeting stride-multiple constraints
     shape = im.shape[:2]  # current shape [height, width]
     if isinstance(new_shape, int):
@@ -125,7 +118,18 @@ def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleF
         im = cv2.resize(im, new_unpad, interpolation=cv2.INTER_LINEAR)
     top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
     left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
-    im = cv2.copyMakeBorder(im, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
+    
+    # check if incoming image is a zstacked image
+    if zstack_support_npy:
+        z = im.shape[-1] # last is the channel number
+        im_border_all = []
+        for q in range( int(z/3) ):
+            im_border_all.append( cv2.copyMakeBorder(im[...,3*q:3*(q+1)], top, bottom, left, right, cv2.BORDER_CONSTANT, value=color) ) # add border
+        im = np.concatenate( im_border_all, axis=-1 )
+        #print( len(im_border_all), im_border_all[0].shape, im_border_all[0].shape, type(im_border_all[0]), im.shape )
+    else:
+        im = cv2.copyMakeBorder(im, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
+    #print('EXIT', im.shape, ratio, (dw, dh) )
     return im, ratio, (dw, dh)
 
 

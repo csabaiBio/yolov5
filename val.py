@@ -123,7 +123,9 @@ def run(data,
         zstack_support_npy=False
         ):
     # Initialize/load model and set device
+    ####print('VAL # Initialize/load model and set device')
     training = model is not None
+    ####print('Called by training cycle:', training, 'dataloader:', dataloader)
     if training:  # called by train.py
         device, pt, jit, engine = next(model.parameters()).device, True, False, False  # get model device, PyTorch model
 
@@ -158,12 +160,16 @@ def run(data,
     model.eval()
     is_coco = isinstance(data.get('val'), str) and data['val'].endswith('coco/val2017.txt')  # COCO dataset
     nc = 1 if single_cls else int(data['nc'])  # number of classes
+    ch = int(data['ch'])  # number of classes
+    ####print('NC:', nc, 'CH:', ch)
     iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
     # Dataloader
     if not training:
-        model.warmup(imgsz=(1 if pt else batch_size, 3, imgsz, imgsz), half=half)  # warmup
+        ####print('IN WARMUP:', 'pt:', pt, 'batch', batch_size,  )
+        #model.warmup(imgsz=(1 if pt else batch_size, 3, imgsz, imgsz), half=half)  # warmup
+        model.warmup(imgsz=(1 if pt else batch_size, ch, imgsz, imgsz), half=half)  # warmup
         pad = 0.0 if task in ('speed', 'benchmark') else 0.5
         rect = False if task == 'benchmark' else pt  # square inference for benchmarks
         task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
@@ -180,6 +186,7 @@ def run(data,
     jdict, stats, ap, ap_class = [], [], [], []
     pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+        ####print('in loop:', batch_i, im.shape)
         t1 = time_sync()
         if pt or jit or engine:
             im = im.to(device, non_blocking=True)
@@ -191,6 +198,7 @@ def run(data,
         dt[0] += t2 - t1
 
         # Inference
+        ####print('IMGSHAPE', im.shape)
         out, train_out = model(im) if training else model(im, augment=augment, val=True)  # inference, loss outputs
         dt[1] += time_sync() - t2
 
