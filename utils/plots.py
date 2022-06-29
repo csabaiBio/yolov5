@@ -75,14 +75,17 @@ class Annotator:
             self.draw = ImageDraw.Draw(self.im)
             self.font = check_pil_font(font='Arial.Unicode.ttf' if is_chinese(example) else font,
                                        size=font_size or max(round(sum(self.im.size) / 2 * 0.035), 12))
-        elif isinstance(im, np.ndarray ):  # zstacked numpy array
+        
+        elif isinstance(im, np.ndarray ) and im.shape[2] > 3:  # zstacked numpy array
             half_z = np.int(im.shape[2]/2) # ex.: z=27, half_z=13 # would be a 9-zstacked image
             half_z_base = half_z % 3 # ex: 1
             half_z = half_z - half_z_base # half_z: 12
             self.im = im[...,half_z:half_z+3]
+            self.im = cv2.cvtColor(self.im, cv2.COLOR_BGR2RGB) # CONVERT IMG IS A MUST to display annotations
         
         else:  # use cv2
             self.im = im
+            self.im = cv2.cvtColor(self.im, cv2.COLOR_BGR2RGB) # CONVERT IMG IS A MUST to display annotations
         self.lw = line_width or max(round(sum(im.shape) / 2 * 0.003), 2)  # line width
 
     def box_label(self, box, label='', color=(128, 128, 128), txt_color=(255, 255, 255)):
